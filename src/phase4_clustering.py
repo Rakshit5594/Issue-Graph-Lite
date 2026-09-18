@@ -20,6 +20,7 @@ with open("X_tfidf.pkl", "rb") as f:
     X_tfidf = pickle.load(f)
 
 cluster_ids = pd.Series([""] * len(df), index=df.index, dtype=object)
+kmeans_models = {}   # category -> fitted KMeans, so NEW complaints can be assigned a cluster later
 
 for category in df["category"].unique():
     idx = df.index[df["category"] == category]
@@ -34,8 +35,24 @@ for category in df["category"].unique():
     labels = km.fit_predict(X_cat)
 
     cluster_ids.loc[idx] = [f"{category}_cluster_{l}" for l in labels]
+    kmeans_models[category] = km
 
 df["cluster_id"] = cluster_ids
+
+# save the fitted per-category KMeans models so the integration pipeline
+# can assign a cluster to a brand-new, unseen complaint
+with open("kmeans_models.pkl", "wb") as f:
+    pickle.dump(kmeans_models, f)
+    print("kmeans created successfully")
+
+# human-readable label for each cluster = its most common true issue_subtype
+cluster_labels = (
+    df.groupby("cluster_id")["issue_subtype"]
+    .agg(lambda s: s.value_counts().idxmax())
+    .to_dict()
+)
+with open("cluster_labels.pkl", "wb") as f:
+    pickle.dump(cluster_labels, f)
 
 # --- Evaluate against ground truth issue_subtype using Adjusted Rand Index ---
 # ARI = 1.0 means perfect agreement with true root-cause labels, 0 = random
